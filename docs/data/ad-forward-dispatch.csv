@@ -1,0 +1,9 @@
+case,variant,runs,median_ms,min_ms,max_ms,median_ratio_after_over_before,ranges_overlap,verdict
+grad-minimos-cuadrados-40x4,before,15,281.4332,276.1658,304.8832,,,
+grad-minimos-cuadrados-40x4,after,15,285.5296,276.949,296.0488,1.014555496650715,true,sin diferencia (rangos solapados o <10%)
+diff-funcion-compuesta,before,15,62.1205,60.7234,66.1832,,,
+diff-funcion-compuesta,after,15,62.6399,60.8094,78.9525,1.008361169018279,true,sin diferencia (rangos solapados o <10%)
+descenso-3000-iteraciones-ls,before,15,431.6168,419.9237,592.6188,,,
+descenso-3000-iteraciones-ls,after,15,434.0118,423.6617,469.619,1.005548903564458,true,sin diferencia (rangos solapados o <10%)
+grad-rosenbrock-100000,before,15,116.6865,113.2445,118.6259,,,
+grad-rosenbrock-100000,after,15,120.5763,117.3787,132.8542,1.0333354758262525,true,sin diferencia (rangos solapados o <10%)
