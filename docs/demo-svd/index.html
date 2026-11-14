@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compresión con SVD</title>
+<style>
+  :root {
+    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --card: #ffffff; --line: #d6d3d1;
+    --accent: #2563eb; --r: #dc2626; --g: #15803d; --b: #2563eb; --err: #c2410c; --psnr: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --card: #292524; --line: #44403c;
+      --accent: #60a5fa; --r: #f87171; --g: #4ade80; --b: #60a5fa; --err: #fb923c; --psnr: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .control { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .control label { font-weight: 600; white-space: nowrap; }
+  .control input[type=range] { flex: 1 1 240px; min-width: 160px; accent-color: var(--accent); }
+  output.k { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 5ch; }
+  .images { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  dl.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0; }
+  dl.metrics div { border-left: 3px solid var(--accent); padding-left: 10px; }
+  dl.metrics dt { color: var(--muted); font-size: .85rem; }
+  dl.metrics dd { margin: 0; font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--muted); font-size: 10px; }
+  svg .grid { stroke: var(--line); stroke-width: 1; }
+  svg .axis { stroke: var(--muted); stroke-width: 1; }
+  svg .mark { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  svg .line { fill: none; stroke-width: 1.8; }
+  svg .pt { stroke: none; }
+  .legend { display: flex; gap: 12px; font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 20px; }
+  @media (max-width: 560px) { .images { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Compresión de imágenes con SVD</h1>
+  <p class="lead">Cada canal de color (R, G, B) es una matriz A. Se conserva la mejor aproximación de rango k,
+    A<sub>k</sub> = Σ<sub>i≤k</sub> σ<sub>i</sub> u<sub>i</sub> v<sub>i</sub><sup>T</sup> (Eckart–Young–Mirsky).
+    Mueve el control para cambiar k.</p>
+
+  <section class="card">
+    <div class="control">
+      <label for="slider">Valores singulares conservados (k)</label>
+      <input id="slider" type="range" min="0" max="0" step="1" value="0" aria-describedby="kout">
+      <output id="kout" class="k" for="slider"></output>
+    </div>
+
+    <div class="images">
+      <figure><img id="img-original" alt="Imagen original"><figcaption>Original</figcaption></figure>
+      <figure><img id="img-k" alt="Imagen reconstruida con k valores singulares"><figcaption id="cap-k"></figcaption></figure>
+    </div>
+
+    <dl class="metrics" aria-live="polite">
+      <div><dt>Energía retenida</dt><dd id="m-energy"></dd></div>
+      <div><dt>Error relativo (Frobenius)</dt><dd id="m-err"></dd></div>
+      <div><dt>PSNR</dt><dd id="m-psnr"></dd></div>
+      <div><dt>Razón de compresión</dt><dd id="m-ratio"></dd></div>
+      <div><dt>Números almacenados</dt><dd id="m-store"></dd></div>
+    </dl>
+  </section>
+
+  <section class="charts">
+    <div class="card">
+      <h2>Valores singulares (escala log)</h2>
+      <svg id="ch-sigma" class="chart" viewBox="0 0 360 230" role="img" aria-label="Valores singulares por canal"></svg>
+      <div class="legend"><span><i style="background:var(--r)"></i>R</span><span><i style="background:var(--g)"></i>G</span><span><i style="background:var(--b)"></i>B</span></div>
+    </div>
+    <div class="card">
+      <h2>Error relativo frente a k</h2>
+      <svg id="ch-err" class="chart" viewBox="0 0 360 230" role="img" aria-label="Error relativo frente a k"></svg>
+    </div>
+    <div class="card">
+      <h2>PSNR (dB) frente a k</h2>
+      <svg id="ch-psnr" class="chart" viewBox="0 0 360 230" role="img" aria-label="PSNR frente a k"></svg>
+    </div>
+  </section>
+
+  <footer>
+    Imagen de <span id="dims"></span> píxeles. La energía es Σ<sub>i≤k</sub> σ<sub>i</sub>² / Σ σ<sub>i</sub>² de la matriz sin centrar
+    (por eso k = 1 ya retiene casi todo: captura el brillo medio). El PSNR se calcula sobre la imagen ya redondeada a 8 bits.
+  </footer>
+</main>
+
+<script type="application/json" id="datos">{"m":128,"n":192,"rank":128,"original":"img/original.png","sigmas":{"r":[14816.90544585611,3502.8523451991173,2097.341027088595,2051.757524756234,1830.2583832509445,1064.1771098584707,782.0472253633021,766.3626888489412,738.283496597928,574.0747793409698,565.1915826789178,557.4165562564174,477.4434471173959,406.09052763620485,367.6019899125182,314.8364970632494,306.40418353650927,293.0193325504949,255.49919675383043,247.7962898122127,220.73301812223605,215.30932224079928,205.2329918549473,196.7377610301543,193.83694986883035,181.8420500699194,177.36868879411597,167.9614266885889,164.6535404714489,161.39620073310056,156.24745218142664,149.90360778005615,146.16994635131138,142.31706239386318,139.5758880745621,136.67874061197108,136.22693949318528,128.746052784514,127.79530722439942,124.75758977475547,119.65161250873712,116.93959866445398,114.96401011342441,114.1298693902521,111.80139838171115,110.84506662789668,109.91631811772533,108.88534890374838,108.19738042318359,106.8831442890848,104.55548950791915,102.60652346806252,99.74520228801195,98.03117889328442,97.55760184018656,95.93042081356128,94.70771968576003,93.58394962406005,91.61269836306995,91.10680061445626,89.15858348556802,88.86326578230424,86.92763390777993,85.72974174732589,85.5455378919814,84.51912290556697,84.21570260231857,82.42374103515024,82.1624892316437,80.48662372473369,77.98456053497608,77.5098376600071,77.13422528529837,75.43969986806566,74.50912229898923,73.36591400188185,72.47092707089735,71.3270465931034,69.38375996068558,68.24538401401502,67.56809443988797,66.96464932696864,65.72196167462305,64.69628972355045,63.226042795342664,62.809394370808484,62.508513999898206,61.56898143065623,60.127466291946156,59.74046200777346,58.24924892452536,57.29358479246005,55.78812548261306,55.20406629281762,53.867588995174806,53.52407932491667,51.83350713440781,50.52272903258435,48.87061371870738,48.55803179224637,46.64510810080618,44.96202799470533,44.61502588902372,44.00085131219212,43.23943699492121,42.28729532948531,41.2447753096681,39.98032974039476,39.173534897336744,38.52970226139387,37.029931443060555,35.57746506084464,35.11244558825166,34.723053506250146,34.28872581605602,32.47843167815001,30.485079000814725,30.161188914824177,28.88198328005896,28.146594563747616,26.425496042921118,25.90486987624434,25.13332123820489,23.769628499858023,23.306941195778467,21.921381767014886,19.792158846497447,18.040610171168584],"g":[21295.863883166778,2208.749822469245,1403.50131587372,1348.4831773286262,857.0762195949557,518.2792189505942,509.0554075879842,500.4081983930462,389.0364271248959,383.1605491622165,361.8712950315354,276.52447953261407,234.4370621886406,208.12317819832077,195.9721334062814,177.42548319692105,172.5439635759989,168.42033409486737,158.5329793058486,153.53316432771268,145.53505360113502,144.18567780250345,141.0317820090718,139.511465547104,137.14612543077214,131.90830224988608,130.28614141173838,130.03607323777305,127.60722979622274,127.01055522452938,125.47364563037806,124.19722111420162,120.06399334714217,116.78681840637684,116.219819524023,114.66750326387053,113.91105037928281,111.08528870872134,110.59854580348886,109.58059749435915,108.49128046254924,107.91513045616531,106.15329711264216,105.22282572190898,103.92915928280878,102.67462626739938,101.31339466425852,100.04975990809484,98.98146593768334,96.98029576763385,96.3983483948108,95.91497871939512,94.79213104538945,93.74696458729731,92.09556289219263,91.42308100417759,89.86390608474537,89.37520175207995,87.95286688189853,87.71601246067003,86.86084585012101,84.98291870853379,84.33548797532988,82.62716709153233,81.07740988826278,79.55551614996682,78.62845166258894,77.78850247721458,77.23868951894538,76.61799990013871,75.96767777338198,75.31186534508345,73.63328196560988,73.49203412577712,72.28170518001102,70.11823917580183,68.44625180919238,67.99609120723112,66.7240979819253,65.90973685348366,64.52558496407235,63.79194647553528,63.44861269236407,61.74186205634825,61.27797362505793,60.12407929878149,59.683306516443416,57.766800694038274,57.168918321185544,56.653134152289134,55.9599933288654,54.8215046735377,53.73059360741523,52.516204770317636,51.80744609115508,50.98132744751207,49.84483888472325,48.91584978939715,47.24086807618129,46.97892118632058,45.47072250479232,45.395273873032544,44.15748321526276,43.087596032525276,41.78710959736906,40.89908630566349,40.00791230985982,39.39610192114902,38.172158874567096,36.620281869131766,35.76274700833428,35.058689239637836,34.91693381706099,34.4620726896626,32.940008772591625,32.52820463715556,31.20101336863906,29.158600212202256,28.557069463466714,27.8821375602535,26.045460197383083,25.279075866347497,24.126236336906793,22.23089110758455,21.625154995921722,20.569251429651494,19.972321142410504,17.46184168112476],"b":[26294.196089095414,4396.974257190625,3938.047899010887,3826.453430626027,1583.2032528964712,1438.5683529956218,1412.7499383335646,1054.7115623694708,1039.6837938411431,884.125446284048,638.4512937002031,470.29966252915506,436.98253858964847,377.7499111544219,342.2170676587242,317.67960709568786,282.6492927554371,256.46360989087907,240.49759166769442,225.89168185831687,214.2348624208123,198.76151291485982,194.65542177274634,186.30627311760395,179.9556526366856,169.64605759626235,165.05581720597314,162.8424195099147,152.50652872908637,150.48098832618703,146.88400892951114,141.28169785538614,139.45752947673734,137.32107171604088,133.5670798857704,130.43302879283962,127.36491880546978,125.56502742155385,121.741668364325,120.90085123852066,119.24752789567013,115.34110445942076,114.16809404373396,113.48792357009671,111.36303013378523,109.49980188223682,109.12714181118277,106.50386902137984,105.42266560254004,104.57029047915125,102.61365114844267,100.62636102765794,98.61135192034214,98.44868503906949,97.41294227313313,95.89816737104202,93.54983357597348,92.75402996306661,91.56368681047955,90.67693367609937,89.94820078453219,88.57693120856673,88.44578945132649,87.11737915746018,87.01365765724746,84.81976295630608,84.5295466402637,81.889086638389,81.34896896832325,79.74386766011041,79.5511622827354,78.16930534292553,75.62656851369853,75.33053637872023,74.60492838766922,73.5209486466425,72.13896280798627,70.96571711715445,70.34788382027935,69.43094637115496,67.4091301255962,67.308758294511,65.72596601712013,63.931998950254936,63.49805561819605,62.09732266386535,61.94734399022261,60.940710554920585,60.07629007194888,59.36094989467438,57.35283209896815,56.905679256198006,56.10522099428229,54.470027738278766,53.74847291042304,52.62830049851909,52.25998893606227,50.644889776269146,49.683026292216844,48.56472642961628,48.15529755137524,47.27574765501898,45.9080660607179,45.45745989595646,44.61145032025399,43.27548282864074,41.723093794062095,40.542301731393,39.470385127217796,39.2586965918049,37.7362521591799,37.552877909043175,36.308495647139495,35.33655158643951,34.089705427694035,32.46944354764412,31.264297780923677,30.80025600202736,30.087419542922177,29.153367691163698,27.210375595073984,26.758561654077912,25.561622467667014,24.64830936932037,22.285761964816448,21.348540796726372,20.106700198243402,18.328433967643317]},"images":["img/k-001.png","img/k-002.png","img/k-003.png","img/k-005.png","img/k-008.png","img/k-010.png","img/k-015.png","img/k-020.png","img/k-030.png","img/k-040.png","img/k-050.png","img/k-075.png","img/k-100.png","img/k-128.png"],"metrics":[{"k":1,"energy":0.9297532162066281,"relError":0.26504109831000033,"psnr":16.674212976897746,"ratio":76.5607476635514},{"k":2,"energy":0.9546126552808453,"relError":0.21304305836885257,"psnr":18.57149211465919,"ratio":38.2803738317757},{"k":3,"energy":0.9695199487429975,"relError":0.17458536953880846,"psnr":20.300822647844306,"ratio":25.5202492211838},{"k":5,"energy":0.9880959569061205,"relError":0.109105651062992,"psnr":24.385414637858634,"ratio":15.312149532710281},{"k":8,"energy":0.9937430703985912,"relError":0.07910075601034944,"psnr":27.177039688307076,"ratio":9.570093457943925},{"k":10,"energy":0.9958114500697158,"relError":0.06471900748840545,"psnr":28.920149829858776,"ratio":7.6560747663551405},{"k":15,"energy":0.9975707403808004,"relError":0.04928751991325497,"psnr":31.283345892311637,"ratio":5.10404984423676},{"k":20,"energy":0.9981835538444518,"relError":0.04261978596318953,"psnr":32.5410331879105,"ratio":3.8280373831775703},{"k":30,"energy":0.9987709629372618,"relError":0.03505762488729285,"psnr":34.22887659428435,"ratio":2.55202492211838},{"k":40,"energy":0.9991152498269441,"relError":0.029744750344488424,"psnr":35.651605448935626,"ratio":1.9140186915887851},{"k":50,"energy":0.9993576947758643,"relError":0.02534374132079608,"psnr":37.03778512821029,"ratio":1.531214953271028},{"k":75,"energy":0.9997451478344218,"relError":0.015964089876297702,"psnr":41.005362443731784,"ratio":1.020809968847352},{"k":100,"energy":0.9999320423805921,"relError":0.008243641149870301,"psnr":46.56798097305781,"ratio":0.765607476635514},{"k":128,"energy":1.0,"relError":2.080575435210597E-14,"psnr":null,"ratio":0.5981308411214953}]}</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("datos").textContent);
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const fmt = (x, d) => x.toFixed(d);
+
+function ticks(lo, hi, log) {
+  const t = [];
+  if (log) {
+    for (let e = Math.ceil(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++) t.push(Math.pow(10, e));
+  } else {
+    for (let i = 0; i <= 4; i++) t.push(lo + (hi - lo) * i / 4);
+  }
+  return t;
+}
+
+function chart(svg, o) {
+  const W = 360, H = 230, m = { l: 46, r: 12, t: 12, b: 32 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const T = o.log ? Math.log10 : (v => v);
+  const fx = x => m.l + (x - o.x0) / (o.x1 - o.x0) * iw;
+  const fy = y => m.t + ih - (T(y) - T(o.y0)) / (T(o.y1) - T(o.y0)) * ih;
+  let s = "";
+  for (const y of ticks(o.y0, o.y1, o.log)) {
+    const py = fy(y);
+    s += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${py}" y2="${py}"/>`;
+    s += `<text x="${m.l - 5}" y="${py + 3}" text-anchor="end">${o.fmtY(y)}</text>`;
+  }
+  for (const x of ticks(o.x0, o.x1, false)) {
+    s += `<text x="${fx(x)}" y="${H - m.b + 14}" text-anchor="middle">${Math.round(x)}</text>`;
+  }
+  s += `<line class="axis" x1="${m.l}" x2="${W - m.r}" y1="${m.t + ih}" y2="${m.t + ih}"/>`;
+  s += `<line class="axis" x1="${m.l}" x2="${m.l}" y1="${m.t}" y2="${m.t + ih}"/>`;
+  s += `<text x="${m.l + iw / 2}" y="${H - 4}" text-anchor="middle">${o.xlabel}</text>`;
+  for (const ser of o.series) {
+    const pts = ser.pts.filter(p => p[1] !== null && isFinite(p[1]) && (!o.log || p[1] > 0));
+    s += `<polyline class="line" style="stroke:var(--${ser.c})" points="${pts.map(p => fx(p[0]) + "," + fy(p[1])).join(" ")}"/>`;
+    if (ser.dots) for (const p of pts) s += `<circle class="pt" style="fill:var(--${ser.c})" cx="${fx(p[0])}" cy="${fy(p[1])}" r="2.6"/>`;
+  }
+  s += `<line class="mark" id="${svg.id}-mark" x1="${fx(o.x0)}" x2="${fx(o.x0)}" y1="${m.t}" y2="${m.t + ih}"/>`;
+  svg.innerHTML = s;
+  svg._fx = fx;
+}
+
+function moveMark(svg, x) {
+  const mk = $(svg.id + "-mark");
+  if (mk && svg._fx) { mk.setAttribute("x1", svg._fx(x)); mk.setAttribute("x2", svg._fx(x)); }
+}
+
+const rank = D.rank;
+const ks = D.metrics.map(m => m.k);
+const finite = D.metrics.map(m => m.psnr).filter(v => v !== null);
+const pmin = Math.floor(Math.min(...finite) / 5) * 5, pmax = Math.ceil(Math.max(...finite) / 5) * 5;
+const allSig = [].concat(D.sigmas.r, D.sigmas.g, D.sigmas.b).filter(v => v > 0);
+const smin = Math.pow(10, Math.floor(Math.log10(Math.min(...allSig)))), smax = Math.pow(10, Math.ceil(Math.log10(Math.max(...allSig))));
+const emax = Math.max(...D.metrics.map(m => m.relError));
+
+chart($("ch-sigma"), { x0: 1, x1: rank, y0: smin, y1: smax, log: true, xlabel: "índice i",
+  fmtY: y => "1e" + Math.round(Math.log10(y)),
+  series: ["r", "g", "b"].map(c => ({ c, pts: D.sigmas[c].map((v, i) => [i + 1, v]) })) });
+chart($("ch-err"), { x0: 1, x1: rank, y0: 0, y1: emax * 1.05, log: false, xlabel: "k",
+  fmtY: y => fmt(y, 2), series: [{ c: "err", dots: true, pts: D.metrics.map(m => [m.k, m.relError]) }] });
+chart($("ch-psnr"), { x0: 1, x1: rank, y0: pmin, y1: pmax, log: false, xlabel: "k",
+  fmtY: y => fmt(y, 0), series: [{ c: "psnr", dots: true, pts: D.metrics.map(m => [m.k, m.psnr]) }] });
+
+const slider = $("slider");
+slider.max = String(D.metrics.length - 1);
+$("img-original").src = D.original;
+$("dims").textContent = D.n + " × " + D.m;
+
+function update() {
+  const i = Number(slider.value), m = D.metrics[i];
+  $("kout").textContent = "k = " + m.k;
+  $("img-k").src = D.images[i];
+  $("cap-k").textContent = "Reconstruida con k = " + m.k + " de " + rank;
+  $("m-energy").textContent = fmt(m.energy * 100, 2) + " %";
+  $("m-err").textContent = m.relError < 1e-3 ? m.relError.toExponential(1) : fmt(m.relError, 4);
+  $("m-psnr").textContent = m.psnr === null ? "∞ (idéntica)" : fmt(m.psnr, 1) + " dB";
+  $("m-ratio").textContent = "×" + fmt(m.ratio, 2);
+  $("m-store").textContent = (3 * m.k * (D.m + D.n + 1)).toLocaleString("es") + " de " + (3 * D.m * D.n).toLocaleString("es");
+  for (const id of ["ch-sigma", "ch-err", "ch-psnr"]) moveMark($(id), m.k);
+}
+slider.addEventListener("input", update);
+update();
+</script>
+</body>
+</html>

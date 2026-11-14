@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compresión con SVD</title>
+<style>
+  :root {
+    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --card: #ffffff; --line: #d6d3d1;
+    --accent: #2563eb; --r: #dc2626; --g: #15803d; --b: #2563eb; --err: #c2410c; --psnr: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --card: #292524; --line: #44403c;
+      --accent: #60a5fa; --r: #f87171; --g: #4ade80; --b: #60a5fa; --err: #fb923c; --psnr: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .control { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .control label { font-weight: 600; white-space: nowrap; }
+  .control input[type=range] { flex: 1 1 240px; min-width: 160px; accent-color: var(--accent); }
+  output.k { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 5ch; }
+  .images { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  dl.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0; }
+  dl.metrics div { border-left: 3px solid var(--accent); padding-left: 10px; }
+  dl.metrics dt { color: var(--muted); font-size: .85rem; }
+  dl.metrics dd { margin: 0; font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg text { fill: var(--muted); font-size: 10px; }
+  svg .grid { stroke: var(--line); stroke-width: 1; }
+  svg .axis { stroke: var(--muted); stroke-width: 1; }
+  svg .mark { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  svg .line { fill: none; stroke-width: 1.8; }
+  svg .pt { stroke: none; }
+  .legend { display: flex; gap: 12px; font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 20px; }
+  @media (max-width: 560px) { .images { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Compresión de imágenes con SVD</h1>
+  <p class="lead">Cada canal de color (R, G, B) es una matriz A. Se conserva la mejor aproximación de rango k,
+    A<sub>k</sub> = Σ<sub>i≤k</sub> σ<sub>i</sub> u<sub>i</sub> v<sub>i</sub><sup>T</sup> (Eckart–Young–Mirsky).
+    Mueve el control para cambiar k.</p>
+
+  <section class="card">
+    <div class="control">
+      <label for="slider">Valores singulares conservados (k)</label>
+      <input id="slider" type="range" min="0" max="0" step="1" value="0" aria-describedby="kout">
+      <output id="kout" class="k" for="slider"></output>
+    </div>
+
+    <div class="images">
+      <figure><img id="img-original" alt="Imagen original"><figcaption>Original</figcaption></figure>
+      <figure><img id="img-k" alt="Imagen reconstruida con k valores singulares"><figcaption id="cap-k"></figcaption></figure>
+    </div>
+
+    <dl class="metrics" aria-live="polite">
+      <div><dt>Energía retenida</dt><dd id="m-energy"></dd></div>
+      <div><dt>Error relativo (Frobenius)</dt><dd id="m-err"></dd></div>
+      <div><dt>PSNR</dt><dd id="m-psnr"></dd></div>
+      <div><dt>Razón de compresión</dt><dd id="m-ratio"></dd></div>
+      <div><dt>Números almacenados</dt><dd id="m-store"></dd></div>
+    </dl>
+  </section>
+
+  <section class="charts">
+    <div class="card">
+      <h2>Valores singulares (escala log)</h2>
+      <svg id="ch-sigma" class="chart" viewBox="0 0 360 230" role="img" aria-label="Valores singulares por canal"></svg>
+      <div class="legend"><span><i style="background:var(--r)"></i>R</span><span><i style="background:var(--g)"></i>G</span><span><i style="background:var(--b)"></i>B</span></div>
+    </div>
+    <div class="card">
+      <h2>Error relativo frente a k</h2>
+      <svg id="ch-err" class="chart" viewBox="0 0 360 230" role="img" aria-label="Error relativo frente a k"></svg>
+    </div>
+    <div class="card">
+      <h2>PSNR (dB) frente a k</h2>
+      <svg id="ch-psnr" class="chart" viewBox="0 0 360 230" role="img" aria-label="PSNR frente a k"></svg>
+    </div>
+  </section>
+
+  <footer>
+    Imagen de <span id="dims"></span> píxeles. La energía es Σ<sub>i≤k</sub> σ<sub>i</sub>² / Σ σ<sub>i</sub>² de la matriz sin centrar
+    (por eso k = 1 ya retiene casi todo: captura el brillo medio). El PSNR se calcula sobre la imagen ya redondeada a 8 bits.
+  </footer>
+</main>
+
+<script type="application/json" id="datos">__DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("datos").textContent);
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const fmt = (x, d) => x.toFixed(d);
+
+function ticks(lo, hi, log) {
+  const t = [];
+  if (log) {
+    for (let e = Math.ceil(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++) t.push(Math.pow(10, e));
+  } else {
+    for (let i = 0; i <= 4; i++) t.push(lo + (hi - lo) * i / 4);
+  }
+  return t;
+}
+
+function chart(svg, o) {
+  const W = 360, H = 230, m = { l: 46, r: 12, t: 12, b: 32 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const T = o.log ? Math.log10 : (v => v);
+  const fx = x => m.l + (x - o.x0) / (o.x1 - o.x0) * iw;
+  const fy = y => m.t + ih - (T(y) - T(o.y0)) / (T(o.y1) - T(o.y0)) * ih;
+  let s = "";
+  for (const y of ticks(o.y0, o.y1, o.log)) {
+    const py = fy(y);
+    s += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${py}" y2="${py}"/>`;
+    s += `<text x="${m.l - 5}" y="${py + 3}" text-anchor="end">${o.fmtY(y)}</text>`;
+  }
+  for (const x of ticks(o.x0, o.x1, false)) {
+    s += `<text x="${fx(x)}" y="${H - m.b + 14}" text-anchor="middle">${Math.round(x)}</text>`;
+  }
+  s += `<line class="axis" x1="${m.l}" x2="${W - m.r}" y1="${m.t + ih}" y2="${m.t + ih}"/>`;
+  s += `<line class="axis" x1="${m.l}" x2="${m.l}" y1="${m.t}" y2="${m.t + ih}"/>`;
+  s += `<text x="${m.l + iw / 2}" y="${H - 4}" text-anchor="middle">${o.xlabel}</text>`;
+  for (const ser of o.series) {
+    const pts = ser.pts.filter(p => p[1] !== null && isFinite(p[1]) && (!o.log || p[1] > 0));
+    s += `<polyline class="line" style="stroke:var(--${ser.c})" points="${pts.map(p => fx(p[0]) + "," + fy(p[1])).join(" ")}"/>`;
+    if (ser.dots) for (const p of pts) s += `<circle class="pt" style="fill:var(--${ser.c})" cx="${fx(p[0])}" cy="${fy(p[1])}" r="2.6"/>`;
+  }
+  s += `<line class="mark" id="${svg.id}-mark" x1="${fx(o.x0)}" x2="${fx(o.x0)}" y1="${m.t}" y2="${m.t + ih}"/>`;
+  svg.innerHTML = s;
+  svg._fx = fx;
+}
+
+function moveMark(svg, x) {
+  const mk = $(svg.id + "-mark");
+  if (mk && svg._fx) { mk.setAttribute("x1", svg._fx(x)); mk.setAttribute("x2", svg._fx(x)); }
+}
+
+const rank = D.rank;
+const ks = D.metrics.map(m => m.k);
+const finite = D.metrics.map(m => m.psnr).filter(v => v !== null);
+const pmin = Math.floor(Math.min(...finite) / 5) * 5, pmax = Math.ceil(Math.max(...finite) / 5) * 5;
+const allSig = [].concat(D.sigmas.r, D.sigmas.g, D.sigmas.b).filter(v => v > 0);
+const smin = Math.pow(10, Math.floor(Math.log10(Math.min(...allSig)))), smax = Math.pow(10, Math.ceil(Math.log10(Math.max(...allSig))));
+const emax = Math.max(...D.metrics.map(m => m.relError));
+
+chart($("ch-sigma"), { x0: 1, x1: rank, y0: smin, y1: smax, log: true, xlabel: "índice i",
+  fmtY: y => "1e" + Math.round(Math.log10(y)),
+  series: ["r", "g", "b"].map(c => ({ c, pts: D.sigmas[c].map((v, i) => [i + 1, v]) })) });
+chart($("ch-err"), { x0: 1, x1: rank, y0: 0, y1: emax * 1.05, log: false, xlabel: "k",
+  fmtY: y => fmt(y, 2), series: [{ c: "err", dots: true, pts: D.metrics.map(m => [m.k, m.relError]) }] });
+chart($("ch-psnr"), { x0: 1, x1: rank, y0: pmin, y1: pmax, log: false, xlabel: "k",
+  fmtY: y => fmt(y, 0), series: [{ c: "psnr", dots: true, pts: D.metrics.map(m => [m.k, m.psnr]) }] });
+
+const slider = $("slider");
+slider.max = String(D.metrics.length - 1);
+$("img-original").src = D.original;
+$("dims").textContent = D.n + " × " + D.m;
+
+function update() {
+  const i = Number(slider.value), m = D.metrics[i];
+  $("kout").textContent = "k = " + m.k;
+  $("img-k").src = D.images[i];
+  $("cap-k").textContent = "Reconstruida con k = " + m.k + " de " + rank;
+  $("m-energy").textContent = fmt(m.energy * 100, 2) + " %";
+  $("m-err").textContent = m.relError < 1e-3 ? m.relError.toExponential(1) : fmt(m.relError, 4);
+  $("m-psnr").textContent = m.psnr === null ? "∞ (idéntica)" : fmt(m.psnr, 1) + " dB";
+  $("m-ratio").textContent = "×" + fmt(m.ratio, 2);
+  $("m-store").textContent = (3 * m.k * (D.m + D.n + 1)).toLocaleString("es") + " de " + (3 * D.m * D.n).toLocaleString("es");
+  for (const id of ["ch-sigma", "ch-err", "ch-psnr"]) moveMark($(id), m.k);
+}
+slider.addEventListener("input", update);
+update();
+</script>
+</body>
+</html>
