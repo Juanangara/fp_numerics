@@ -4,9 +4,7 @@
 
 ![Lenguaje: Clojure](https://img.shields.io/badge/lenguaje-Clojure-blue)
 ![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green)
-<!-- Insignia del CI: descomentar cuando exista el repositorio y el workflow se haya ejecutado al menos una vez
-     (hoy el workflow está configurado pero NO se ha ejecutado nunca). Usuario ya puesto:
-![Pruebas](https://github.com/Juanangara/fp_numerics/actions/workflows/test.yml/badge.svg) -->
+[![Pruebas](https://github.com/Juanangara/fp_numerics/actions/workflows/test.yml/badge.svg)](https://github.com/Juanangara/fp_numerics/actions/workflows/test.yml)
 
 Proyecto académico desarrollado en el semillero **Programación Funcional** de **Universidad Nacional de Colombia, Sede Bogotá**, **2026**. Explora varias ideas del álgebra lineal numérica con un enfoque funcional: datos inmutables, funciones puras y composición.
 
@@ -164,7 +162,7 @@ Con una columna duplicada (rango deficiente) las ecuaciones normales fallan, la 
 
 ## Cómo ejecutarlo
 
-**Requisitos:** un JDK, la [Clojure CLI](https://clojure.org/guides/install_clojure) y `git` (el *test-runner* es una dependencia git). **Verificado con JDK 25 en Windows 11**; no se ha verificado ninguna otra versión ni sistema. En Windows, la Clojure CLI se instala como módulo de PowerShell, y los comandos se ejecutan desde PowerShell.
+**Requisitos:** un JDK, la [Clojure CLI](https://clojure.org/guides/install_clojure) y `git` (el *test-runner* es una dependencia git). **Verificado localmente con JDK 25 en Windows 11**; el CI de GitHub Actions (Ubuntu) también pasa las pruebas con JDK 21 y 25. No se ha verificado ninguna otra versión ni sistema, ni los demos en Ubuntu. En Windows, la Clojure CLI se instala como módulo de PowerShell, y los comandos se ejecutan desde PowerShell.
 
 ```bash
 git clone https://github.com/Juanangara/fp_numerics.git
@@ -251,8 +249,8 @@ El detalle, con las mediciones y las alternativas descartadas, está en [`docs/d
 ## Limitaciones
 
 - **Imagen sintética.** Las cifras de compresión (energía, PSNR, razón) dependen de ella; una fotografía da otras.
-- **CI sin ejecutar.** El workflow de GitHub Actions está configurado, pero todavía no se ha ejecutado nunca: no hay evidencia de que pase.
-- **Solo JDK 25 verificado**, y solo en Windows 11.
+- **Alcance del CI.** El workflow de GitHub Actions solo ejecuta las pruebas (`clojure -M:test`) en Ubuntu con JDK 21 y 25. Los demos, los scripts y las figuras solo se han ejecutado en Windows 11 con JDK 25.
+- **Otras versiones y sistemas sin verificar**: JDK distintos de 21 y 25, macOS y Windows con otra configuración.
 - **Estado global benigno.** Reverse mode usa un contador global (`atom`) para numerar los nodos. No afecta al resultado, pero rompe la pureza estricta (D1).
 - **Los tiempos dependen de la máquina.** Se midieron en un portátil con otros programas abiertos, sin repetirlos en otro equipo. Las razones y los exponentes son lo fiable.
 - **Rendimiento.** Los números en caja de Clojure no compiten con LAPACK, y la compresión con SVD no compite con JPEG (que usa la DCT por bloques): es un ejemplo pedagógico de aproximación de bajo rango.
