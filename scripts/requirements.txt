@@ -1,0 +1,10 @@
+# Dependencias de Python de los scripts de scripts/. Son OPCIONALES: el proyecto en
+# Clojure (src/, test/ y los demos) no necesita Python.
+#
+#   numpy       scripts/generate_svd_fixture.py  (valores singulares de referencia)
+#   matplotlib  scripts/make_figures.py          (las gráficas de docs/img/)
+#
+# Instalación:  python -m pip install -r scripts/requirements.txt
+# Versiones con las que se ha verificado el proyecto: Python 3.12.10, Windows 11.
+numpy==2.5.4
+matplotlib==3.11.2
