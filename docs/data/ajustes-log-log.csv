@@ -1,0 +1,12 @@
+fit,function,source,metric,value
+exponente-n,minimos-cuadrados,ad-forward-vs-reverse.csv,forward,1.9380689562031412
+exponente-n,minimos-cuadrados,ad-forward-vs-reverse.csv,reverse,1.090225512735297
+exponente-n,suma-de-cuadrados,ad-forward-vs-reverse.csv,forward,1.887699293167011
+exponente-n,suma-de-cuadrados,ad-forward-vs-reverse.csv,reverse,1.103868182263144
+exponente-n,minimos-cuadrados,ad-forward-vs-reverse-repeticion.csv,forward,1.9209057970770238
+exponente-n,minimos-cuadrados,ad-forward-vs-reverse-repeticion.csv,reverse,1.0495328531191062
+exponente-n,suma-de-cuadrados,ad-forward-vs-reverse-repeticion.csv,forward,1.919677532588688
+exponente-n,suma-de-cuadrados,ad-forward-vs-reverse-repeticion.csv,reverse,1.1084689130801622
+cruce-forward-reverse,minimos-cuadrados,ad-forward-vs-reverse-cruce.csv,n_donde_la_razon_vale_1,11.107288030654972
+cruce-forward-reverse,suma-de-cuadrados,ad-forward-vs-reverse-cruce.csv,n_donde_la_razon_vale_1,10.438843272794964
+exponente-kappa,descenso-de-gradiente,conditioning-gd.csv,iteraciones_vs_kappa_con_kappa_ge_10,1.9195672181325276
