@@ -1,0 +1,15 @@
+.cpcache/
+.clj-kondo/
+.lsp/
+.nrepl-port
+target/
+out/
+*.log
+.idea/
+.vscode/
+.calva/
+*.iml
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
